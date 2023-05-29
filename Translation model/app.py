@@ -18,29 +18,60 @@ with open(f"{dir_path}/Models/AR_Tokenizer.pkl", 'rb') as file:
 with open(f"{dir_path}/Models/EN_Tokenizer.pkl", 'rb') as file:
     EN = dill.load(file)
 
-with open(f"{dir_path}/Models/encoder.json", "r") as file:
+
+
+###########
+
+with open(f"{dir_path}/Models/encoder_en2ar.json", "r") as file:
     encoder_json = file.read()
 
 # Create an instance of your subclassed model
-encoder = tf.keras.models.model_from_json(encoder_json, custom_objects={'Encoder': Encoder})
+encoder_en2ar = tf.keras.models.model_from_json(encoder_json, custom_objects={'Encoder': Encoder})
 
-encoder(tf.zeros((64, 1)),tf.zeros((64, 1024)))
+encoder_en2ar(tf.zeros((64, 1)),tf.zeros((64, 1024)))
 # Load the model's weights
-encoder.load_weights(f"{dir_path}/Models/encoder_en2ar.h5")
+encoder_en2ar.load_weights(f"{dir_path}/Models/encoder_en2ar.h5")
 
 
-with open(f"{dir_path}/Models/decoder.json", "r") as file:
+with open(f"{dir_path}/Models/decoder_en2ar.json", "r") as file:
     decoder_json = file.read()
 
 # Create an instance of your subclassed model
-decoder = tf.keras.models.model_from_json(decoder_json, custom_objects={'Decoder': Decoder})
+decoder_en2ar = tf.keras.models.model_from_json(decoder_json, custom_objects={'Decoder': Decoder})
 
-decoder(tf.zeros((64, 1)),tf.zeros((64, 1024)),tf.zeros((64, 1, 1024)))
+decoder_en2ar(tf.zeros((64, 1)),tf.zeros((64, 1024)),tf.zeros((64, 1, 1024)))
 # Load the model's weights
-decoder.load_weights(f"{dir_path}/Models/decoder_en2ar.h5")
+decoder_en2ar.load_weights(f"{dir_path}/Models/decoder_en2ar.h5")
+
+####################
+
+with open(f"{dir_path}/Models/encoder_ar2en.json", "r") as file:
+    encoder_json = file.read()
+
+# Create an instance of your subclassed model
+encoder_ar2en = tf.keras.models.model_from_json(encoder_json, custom_objects={'Encoder': Encoder})
+
+encoder_ar2en(tf.zeros((64, 1)),tf.zeros((64, 1024)))
+# Load the model's weights
+encoder_ar2en.load_weights(f"{dir_path}/Models/encoder_ar2en.h5")
+
+
+with open(f"{dir_path}/Models/decoder_ar2en.json", "r") as file:
+    decoder_json = file.read()
+
+# Create an instance of your subclassed model
+decoder_ar2en = tf.keras.models.model_from_json(decoder_json, custom_objects={'Decoder': Decoder})
+
+decoder_ar2en(tf.zeros((64, 1)),tf.zeros((64, 1024)),tf.zeros((64, 1, 1024)))
+# Load the model's weights
+decoder_ar2en.load_weights(f"{dir_path}/Models/decoder_ar2en.h5")
+
+#######################
 
 def predict(text,lang):
-    
+    encoder = {"ar":encoder_ar2en,"en":encoder_en2ar}[lang]
+    decoder = {"ar":decoder_ar2en,"en":decoder_en2ar}[lang]
+
     text = preprocess_sentence(text,lang)
 
     inputs = EN.texts_to_sequences([text])[0]
@@ -75,15 +106,15 @@ def predict(text,lang):
 @app.post("/pred")
 async def create_upload_file(request: Request):
     req = await request.json()
-    return JSONResponse(predict(req["text"],"en"))
+    return JSONResponse(predict(req["text"],req["lang"]))
 
 @app.post("/form")
-async def create_upload_file(form: str = Form(...)):
-    return JSONResponse(predict(form,"en"))
+async def create_upload_file(form: str = Form(...),lang: str = Form(...)):
+    return JSONResponse(predict(form,lang))
 
 @app.post("/input")
 def input_request(payload: dict = Body(...)):
-    return JSONResponse(predict(payload["text"],"en"))
+    return JSONResponse(predict(payload["text"],payload["lang"]))
 
 
 if __name__ == "__main__":
