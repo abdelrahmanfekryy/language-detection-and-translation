@@ -6,6 +6,8 @@ import uvicorn
 import dill
 import tensorflow as tf
 from utils.helper import Tokenizer, Encoder,Decoder, preprocess_sentence
+from langdetect import detect_langs
+import numpy as np
 
 
 app = FastAPI()
@@ -68,14 +70,25 @@ decoder_ar2en.load_weights(f"{dir_path}/Models/decoder_ar2en.h5")
 
 #######################
 
-def predict(text,lang):
-    encoder = {"ar":encoder_ar2en,"en":encoder_en2ar}[lang]
-    decoder = {"ar":decoder_ar2en,"en":decoder_en2ar}[lang]
+def langWithThresh(text,thresh):
+    langs = np.array([[lang.lang, lang.prob] for lang in detect_langs(text)])
+    idx = langs[:,1].argmax()
+    if float(langs[:,1][idx]) > thresh:
+        return langs[:,0][idx]
 
-    text = preprocess_sentence(text,lang)
-
-    inputs = EN.texts_to_sequences([text])[0]
-    inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs], maxlen=EN.maxlen, padding='post')
+def predict(text):
+    lang = langWithThresh(text,0.5)
+    if lang == "en" or lang == "ar":
+        encoder = {"ar":encoder_ar2en,"en":encoder_en2ar}[lang]
+        decoder = {"ar":decoder_ar2en,"en":decoder_en2ar}[lang]
+        input_tok = {"ar":AR,"en":EN}[lang]
+        output_tok = {"ar":EN,"en":AR}[lang]
+        text = preprocess_sentence(text,lang)
+    else:
+        return "Error: Unknown/Unsupported Language"
+    
+    inputs = input_tok.texts_to_sequences([text])[0]
+    inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs], maxlen=input_tok.maxlen, padding='post')
     inputs = tf.convert_to_tensor(inputs)
     
     result = ''
@@ -84,18 +97,18 @@ def predict(text,lang):
     enc_out, enc_hidden = encoder(inputs, hidden)
 
     dec_hidden = enc_hidden
-    dec_input = tf.expand_dims([AR.word2idx['<start>']], 0)
+    dec_input = tf.expand_dims([output_tok.word2idx['<start>']], 0)
 
-    for t in range(AR.maxlen):
+    for t in range(output_tok.maxlen):
         predictions, dec_hidden, attention_weights = decoder(dec_input, dec_hidden, enc_out)
 
         predicted_id = tf.random.categorical(tf.exp(predictions), num_samples=1)[0][0].numpy()
 
-
-        if AR.idx2word[predicted_id] == '<end>':
+        if output_tok.idx2word[predicted_id] == '<end>':
+            
             return result
         
-        result += AR.idx2word[predicted_id] + ' '
+        result += output_tok.idx2word[predicted_id] + ' '
 
 
         dec_input = tf.expand_dims([predicted_id], 0)
@@ -106,15 +119,15 @@ def predict(text,lang):
 @app.post("/pred")
 async def create_upload_file(request: Request):
     req = await request.json()
-    return JSONResponse(predict(req["text"],req["lang"]))
+    return JSONResponse(predict(req["text"]))
 
 @app.post("/form")
-async def create_upload_file(form: str = Form(...),lang: str = Form(...)):
-    return JSONResponse(predict(form,lang))
+async def create_upload_file(form: str = Form(...)):
+    return JSONResponse(predict(form))
 
 @app.post("/input")
 def input_request(payload: dict = Body(...)):
-    return JSONResponse(predict(payload["text"],payload["lang"]))
+    return JSONResponse(predict(payload["text"]))
 
 
 if __name__ == "__main__":
